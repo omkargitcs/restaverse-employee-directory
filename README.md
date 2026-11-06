@@ -140,6 +140,7 @@ Every error has the same shape, so the frontend never has to guess:
 - **500**: database or unexpected failure. The message is generic and the full trace stays in the server logs only.
 
 ---
+- **Why MySQL.** Employee data is relational and fixed in shape (one table, a unique email, a date), and the access pattern is simple lookups. MySQL's B-tree indexes serve prefix searches well, it is widely supported by hosts, and it matches the stack the assignment prefers. An empty `search` returns the first page of everyone, which is what the UI shows on load.
 
 ## Design decisions (and why)
 
