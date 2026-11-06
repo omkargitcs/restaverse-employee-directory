@@ -2,7 +2,10 @@
 
 Internal employee search: **React 18 + Vite** frontend, **FastAPI** backend, **MySQL 8** store.
 
+FRONTEND LINK : 
 ## https://restaverse-employee-directory.vercel.app
+BACKEND LINK : 
+## https://restaverse-employee-directory.onrender.com/
 
 ## Quick start
 
