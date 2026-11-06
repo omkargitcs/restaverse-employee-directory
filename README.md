@@ -104,12 +104,12 @@ No host or port is hardcoded in the source. Everything comes from environment fi
 
 | Param | Rules | Notes |
 |---|---|---|
-| `q` | optional, up to 100 characters | Matches the start of a name or department, or the start of any word in them (case-insensitive) |
+| `search` | optional, up to 100 characters | Matches the start of a name or department, or the start of any word in them (case-insensitive). Omit it to list everyone; a blank value (`?search=`) returns `400`. |
 | `limit` | 1–100, default 20 | Page size |
 | `offset` | 0–100000, default 0 | Where the page starts |
 
 ```bash
-curl "https://restaverse-employee-directory.onrender.com/api/v1/employees?q=eng&limit=5"
+curl "https://restaverse-employee-directory.onrender.com/api/v1/employees?search=eng&limit=5"
 ```
 
 ```json
@@ -133,16 +133,17 @@ curl "https://restaverse-employee-directory.onrender.com/api/v1/employees?q=eng&
 Every error has the same shape, so the frontend never has to guess:
 
 ```json
-{ "error": { "code": "bad_request", "message": "q: String should have at most 100 characters" } }
+{ "error": { "code": "bad_request", "message": "search: String should have at most 100 characters" } }
 ```
 
-- **400**: bad input (too-long query, out-of-range paging, unknown parameters).
+- **400**: bad input (blank or too-long `search`, out-of-range paging, unknown parameters, control characters).
 - **500**: database or unexpected failure. The message is generic and the full trace stays in the server logs only.
 
 ---
-- **Why MySQL.** Employee data is relational and fixed in shape (one table, a unique email, a date), and the access pattern is simple lookups. MySQL's B-tree indexes serve prefix searches well, it is widely supported by hosts, and it matches the stack the assignment prefers. An empty `search` returns the first page of everyone, which is what the UI shows on load.
 
 ## Design decisions (and why)
+
+**Why MySQL.** Employee data is relational and fixed in shape (one table, a unique email, a date), and the access pattern is simple lookups. MySQL's B-tree indexes serve prefix searches well, it is available on every host, and it matches the stack the assignment prefers.
 
 **Search that uses the indexes.** The main match is `LIKE 'term%'`, which MySQL can serve from the index on `name` and `department` instead of scanning the whole table. A second branch, `LIKE '% term%'`, lets people search by last name or the second word of a department. Wildcards a user types (`%`, `_`) are escaped and matched literally.
 *Trade-off:* the second branch can't use a B-tree index. For a company directory (hundreds to a few thousand people) that cost is negligible. If the directory ever grows far beyond that, the next step is a FULLTEXT index or a dedicated search service.
@@ -150,6 +151,8 @@ Every error has the same shape, so the frontend never has to guess:
 **Indexes.** `email` is unique, `(name, department)` is a composite index, and `department` has its own index (a composite index that starts with `name` can't help lookups that start with department). I dropped the FULLTEXT index from the original script because the query doesn't use it and it would only add write overhead.
 
 **Debounce plus cancellation.** A 350 ms debounce stops a request on every keystroke, and `AbortController` cancels any request that's been superseded. Old results stay on screen (slightly dimmed) while new ones load, so the page never jumps. Skeletons appear only when there's nothing to show yet.
+
+**Empty search.** Leaving out `search` returns the first page of all employees, which is what the UI shows on load. Sending `search=` with a blank value is treated as invalid input and returns `400`, and the UI never sends one.
 
 **Stable pagination.** Results are ordered by `name, id`, so pages never overlap or skip rows, and the response includes a `total` for the UI.
 
