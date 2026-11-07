@@ -1,5 +1,4 @@
--- Restaverse Employee Directory: schema + seed data.
--- WARNING: DROP TABLE is for local/dev bootstrap only. Remove it before running against shared data.
+
 CREATE DATABASE IF NOT EXISTS restaverse_internal
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE restaverse_internal;
@@ -13,9 +12,9 @@ CREATE TABLE employees (
     department VARCHAR(80) NOT NULL,
     designation VARCHAR(100) NOT NULL,
     date_of_joining DATE NOT NULL,
-    CONSTRAINT uq_employees_email UNIQUE (email),          -- also serves as the email index
-    INDEX idx_name_dept (name, department),                -- prefix search on name (+ covers name/department reads)
-    INDEX idx_department (department)                      -- prefix search / filtering on department
+    CONSTRAINT uq_employees_email UNIQUE (email),          
+    INDEX idx_name_dept (name, department),                
+    INDEX idx_department (department)                      
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO employees (name, email, department, designation, date_of_joining) VALUES
