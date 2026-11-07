@@ -1,190 +1,76 @@
-# 🍽️ Restaverse Employee Directory
+# Restaverse Employee Directory
 
-A fast, no-fuss internal tool for finding teammates across **Engineering, Operations, Culinary Tech, Product, Support and Design**.
+Internal employee search: **React 18 + Vite** frontend, **FastAPI** backend, **MySQL 8** store.
 
-Restaverse powers dining experiences across restaurant networks. As the team grows, people need to find each other quickly. Type a name or a team and the right person is on screen, the way a good kitchen finds the right ticket.
-
-| | |
-|---|---|
-| 🌐 **Live app** | https://restaverse-employee-directory.vercel.app |
-| ⚙️ **Live API** | https://restaverse-employee-directory.onrender.com |
-| ❤️ **Health check** | https://restaverse-employee-directory.onrender.com/health |
-
-> **Heads-up:** the API runs on a free hosting tier that sleeps when idle. If the first search takes 30–60 seconds, the server is just waking up. After that it's quick.
-
----
-
-## What it does
-
-- **Live search** by name or department, with partial matches (`eng` finds Engineering, `sharma` finds Rahul Sharma).
-- **Smooth typing.** Requests are debounced, and a new keystroke cancels the stale request, so results never flicker or arrive out of order.
-- **Every state handled:** loading skeletons, results, a friendly "no matches" screen, and clear error messages with a retry button.
-- **Pagination** with a "Load more" button, so the payload stays small as the team grows.
-
-## Tech stack
-
-| Layer | Choice |
-|---|---|
-| Frontend | React 18 + Vite, Axios, plain modular CSS |
-| Backend | Python 3.10+, FastAPI, Pydantic v2 |
-| Database | MySQL 8 via async SQLAlchemy (`aiomysql`) |
-| Hosting | Vercel (frontend), Render (API), Railway (MySQL) |
-
-## How it's organised
-
-```
-restaverse-employee-directory/
-├── frontend/
-│   └── src/
-│       ├── components/   SearchBar · EmployeeCard · EmployeeList · state views
-│       ├── hooks/        useEmployeeSearch · useDebouncedValue
-│       └── services/     api.js  (the only place that talks to the network)
-├── backend/
-│   └── app/
-│       ├── routers/        HTTP only: routes, request/response
-│       ├── services/       business logic
-│       ├── repositories/   all database queries
-│       ├── schemas/        Pydantic models and validation
-│       ├── core/           config + uniform error handling
-│       └── db/             engine, session, model
-├── seed.sql              schema, indexes and 10 sample employees
-└── README.md
-```
-
-The backend is layered as `router → service → repository → database`. Each layer has a single job, so adding something like "create employee" later means adding a route, a service method and a query. Nothing needs restructuring. On the frontend, UI components stay free of fetching logic: the `useEmployeeSearch` hook owns state, and `api.js` owns the network.
-
----
-
-## Run it locally
-
-You'll need **Python 3.10+**, **Node 18+** and **MySQL 8**.
+## Quick start
 
 ### 1. Database
-```bash
-mysql -u root -p < seed.sql
-```
-This creates the `restaverse_internal` database, the `employees` table with its indexes, and 10 sample employees.
+Local MySQL: `mysql -u root -p < seed.sql`, then create a user with access to `restaverse_internal`.
 
-### 2. Backend
+### 2. Backend (Python 3.10+)
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate          # Windows Git Bash: source .venv/Scripts/activate
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env               # then set DB_USER / DB_PASSWORD for your MySQL
+cp .env.example .env                                  # edit DB credentials if needed
 uvicorn app.main:app --reload --port 8000
 ```
-Open http://localhost:8000/docs for the interactive API docs, or http://localhost:8000/health for a quick check.
+API docs: http://localhost:8000/docs · Health: `GET /health`
 
-### 3. Frontend
+### 3. Frontend (Node 18+)
 ```bash
 cd frontend
-cp .env.example .env               # VITE_API_BASE_URL=http://localhost:8000
+cp .env.example .env          # sets VITE_API_BASE_URL
 npm install
-npm run dev
+npm run dev                   # http://localhost:5173
 ```
-Open http://localhost:5173.
-
-### Configuration
-
-| File | Variable | Purpose |
-|---|---|---|
-| `backend/.env` | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | MySQL connection |
-| `backend/.env` | `CORS_ORIGINS` | Comma-separated list of allowed frontend origins (never `*`) |
-| `backend/.env` | `APP_ENV` | `production` turns off the `/docs` pages |
-| `frontend/.env` | `VITE_API_BASE_URL` | Where the frontend finds the API (no trailing slash) |
-
-No host or port is hardcoded in the source. Everything comes from environment files, and real `.env` files are git-ignored.
-
----
+`npm run build` produces a production bundle in `frontend/dist`.
 
 ## API
 
-### `GET /api/v1/employees`
+`GET /api/v1/employees?search=<text>&limit=20&offset=0`
 
 | Param | Rules | Notes |
-|---|---|---|
-| `search` | optional, up to 100 characters | Matches the start of a name or department, or the start of any word in them (case-insensitive). Omit it to list everyone; a blank value (`?search=`) returns `400`. |
-| `limit` | 1–100, default 20 | Page size |
-| `offset` | 0–100000, default 0 | Where the page starts |
+|-------|-------|-------|
+| `search` | optional, ≤ 100 chars | matches start of name/department or start of any word in them (case-insensitive) |
+| `limit` | 1–100, default 20 | |
+| `offset` | 0–100000, default 0 | |
 
-```bash
-curl "https://restaverse-employee-directory.onrender.com/api/v1/employees?search=eng&limit=5"
+Response: `{ "items": [...], "total": 10, "limit": 20, "offset": 0 }`
+
+Errors always use `{ "error": { "code", "message" } }`:
+- `400` malformed/oversized query, bad pagination values, unknown params, control characters
+- `500` DB/unexpected failures — message is masked, full trace goes to server logs only
+
+Examples: `?search=rahul`, `?search=eng`, `?search=tech` (→ Culinary Tech), `?search=sharma`.
+
+## Technical decisions
+
+- **Search strategy.** `LIKE 'term%'` on `name`/`department` is index-friendly (`idx_name_dept`, `idx_department`). A second `LIKE '% term%'` branch gives word-prefix matching so last names and the second word of a department work. Wildcards typed by users (`%`, `_`) are escaped, so they are matched literally. *Trade-off:* the word-prefix branch cannot use a B-tree index; at directory scale (thousands of rows) this is negligible. Beyond that, move to a FULLTEXT/ngram index or a search service.
+- **Indexes.** Unique on `email`, composite `(name, department)`, plus `department` alone (a composite index with `name` first can't serve department-leading lookups). The unused FULLTEXT index from the original script was dropped to avoid write overhead.
+- **Pagination.** `limit`/`offset` with deterministic ordering (`name, id`) and a `total` count; UI has "Load more".
+- **Debounce + cancellation.** 350 ms debounce hook; every new request aborts the previous one via `AbortController`. Previous results stay on screen (dimmed) while refetching, so typing doesn't flicker. Skeletons only show when there is nothing to display.
+- **Layering.** `routers → services → repositories → db`; Pydantic schemas validate query params (`extra="forbid"`) and serialise responses. Adding CRUD means adding methods/routes, not restructuring.
+- **Async DB.** SQLAlchemy 2 async engine (`aiomysql`), pooled, `pool_pre_ping` and `pool_recycle`, 5 s connect timeout, one session per request via `get_db`.
+
+## Security hardening
+
+- Parameterised queries only (no string-built SQL) + LIKE-wildcard escaping.
+- Strict input validation (length caps, bounded pagination, control-character rejection, unknown params rejected).
+- CORS is an explicit allow-list from `CORS_ORIGINS` (never `*`), GET-only.
+- Internal errors never leak stack traces or SQL; validation errors don't echo raw input.
+- Swagger/OpenAPI disabled when `APP_ENV=production`.
+- Secrets only via `.env` (git-ignored); `.env.example` has placeholders — **change the passwords** in `.env` before any shared deployment.
+- Frontend renders all data through React (auto-escaped); no `dangerouslySetInnerHTML`.
+- `seed.sql` contains `DROP TABLE` for dev bootstrap — remove it before running against real data.
+
+## Notes
+- No Alembic migrations are included: the schema is a single table created by `seed.sql`. Add Alembic when the schema starts evolving.
+- Frontend uses plain modular CSS (no Tailwind build step) and axios + a custom hook instead of React Query, since cancellation is handled explicitly with `AbortController`.
+
+## Structure
 ```
-
-```json
-{
-  "items": [
-    {
-      "id": 2,
-      "name": "Ananya Roy",
-      "email": "ananya.roy@restaverse.com",
-      "department": "Engineering",
-      "designation": "Frontend Developer",
-      "date_of_joining": "2022-06-01"
-    }
-  ],
-  "total": 3,
-  "limit": 5,
-  "offset": 0
-}
+backend/app/{core,db,repositories,services,routers,schemas}/  main.py
+frontend/src/{components,hooks,services}/  App.jsx  main.jsx
+seed.sql  README.md
 ```
-
-Every error has the same shape, so the frontend never has to guess:
-
-```json
-{ "error": { "code": "bad_request", "message": "search: String should have at most 100 characters" } }
-```
-
-- **400**: bad input (blank or too-long `search`, out-of-range paging, unknown parameters, control characters).
-- **500**: database or unexpected failure. The message is generic and the full trace stays in the server logs only.
-
----
-
-## Design decisions (and why)
-
-**Why MySQL.** Employee data is relational and fixed in shape (one table, a unique email, a date), and the access pattern is simple lookups. MySQL's B-tree indexes serve prefix searches well, it is available on every host, and it matches the stack the assignment prefers.
-
-**Search that uses the indexes.** The main match is `LIKE 'term%'`, which MySQL can serve from the index on `name` and `department` instead of scanning the whole table. A second branch, `LIKE '% term%'`, lets people search by last name or the second word of a department. Wildcards a user types (`%`, `_`) are escaped and matched literally.
-*Trade-off:* the second branch can't use a B-tree index. For a company directory (hundreds to a few thousand people) that cost is negligible. If the directory ever grows far beyond that, the next step is a FULLTEXT index or a dedicated search service.
-
-**Indexes.** `email` is unique, `(name, department)` is a composite index, and `department` has its own index (a composite index that starts with `name` can't help lookups that start with department). I dropped the FULLTEXT index from the original script because the query doesn't use it and it would only add write overhead.
-
-**Debounce plus cancellation.** A 350 ms debounce stops a request on every keystroke, and `AbortController` cancels any request that's been superseded. Old results stay on screen (slightly dimmed) while new ones load, so the page never jumps. Skeletons appear only when there's nothing to show yet.
-
-**Empty search.** Leaving out `search` returns the first page of all employees, which is what the UI shows on load. Sending `search=` with a blank value is treated as invalid input and returns `400`, and the UI never sends one.
-
-**Stable pagination.** Results are ordered by `name, id`, so pages never overlap or skip rows, and the response includes a `total` for the UI.
-
-**Resilient database layer.** The async connection pool uses `pool_pre_ping` to replace dead connections, `pool_recycle` to avoid MySQL idle timeouts, and a 5-second connect timeout so a database outage fails fast instead of hanging.
-
-**Security basics.** Queries are parameterised only. Inputs are length-limited and bounded. CORS is an explicit allow-list and GET-only. Errors never leak SQL or stack traces. React escapes all rendered data. API docs are disabled in production, and secrets live only in environment variables.
-
----
-
-## Deployment
-
-| Piece | Where | Key settings |
-|---|---|---|
-| MySQL | Railway | Seed loaded with `mysql ... < seed.sql` |
-| API | Render (Web Service) | Root `backend` · build `pip install -r requirements.txt` · start `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
-| Frontend | Vercel | Root `frontend` · build `npm run build` · output `dist` · env `VITE_API_BASE_URL` |
-
-After deploying, set the API's `CORS_ORIGINS` to the exact frontend URL, with no trailing slash.
-
----
-
-## Scope notes
-
-A few choices were made on purpose to keep the project lean:
-
-- **No Alembic migrations.** With a single table, `seed.sql` is the schema. Alembic is the next step once the schema starts changing.
-- **No React Query or Tailwind.** A small custom hook with `AbortController` gives precise control over cancellation, and plain CSS keeps the build simple.
-- **`seed.sql` includes `DROP TABLE`** so you can reset a development database in one command. Remove that line before pointing it at real data.
-
-## What I'd build next
-
-- Filter chips by department and sort options
-- Employee create/update endpoints (the layering is already set up for this)
-- Alembic migrations and automated tests for the search endpoint
-- SSL support for the database connection and rate limiting on the API

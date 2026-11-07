@@ -8,7 +8,7 @@ class EmployeeSearchParams(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    q: str | None = Field(default=None, max_length=100, description="Search name or department")
+    search: str | None = Field(default=None, max_length=100, description="Search name or department")
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0, le=100_000)
 

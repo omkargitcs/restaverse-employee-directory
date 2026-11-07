@@ -11,7 +11,9 @@ def normalize_query(q: str | None) -> str | None:
     if any(unicodedata.category(ch) == "Cc" for ch in q):
         raise AppError(400, "bad_request", "Search query contains invalid control characters")
     cleaned = " ".join(q.split())
-    return cleaned or None
+    if not cleaned:
+        raise AppError(400, "bad_request", "Search query must not be empty")
+    return cleaned
 
 
 class EmployeeService:
@@ -19,7 +21,7 @@ class EmployeeService:
         self._repo = repo
 
     async def search(self, params: EmployeeSearchParams) -> EmployeeListResponse:
-        q = normalize_query(params.q)
+        q = normalize_query(params.search)
         rows, total = await self._repo.search(q, params.limit, params.offset)
         return EmployeeListResponse(
             items=[EmployeeOut.model_validate(r) for r in rows],

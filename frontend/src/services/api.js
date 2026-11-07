@@ -14,7 +14,7 @@ const http = axios.create({
  */
 export async function searchEmployees({ q = '', limit = 20, offset = 0 } = {}, signal) {
   const params = { limit, offset };
-  if (q) params.q = q;
+  if (q) params.search = q;
   const { data } = await http.get('/api/v1/employees', { params, signal });
   return data;
 }
